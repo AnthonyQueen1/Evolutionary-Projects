@@ -1,0 +1,209 @@
+##### main.py
+from functions import init
+from selection import natselect, getbest
+from timeit import default_timer as timer
+
+
+MAXITERATIONS       = 1000000
+POPULATION_SIZE     = 300
+PERMUTATION_LENGTH  = 127
+TOURNAMENT_SIZE     = 5
+
+TRIALS = 1
+avg = []
+
+def startit():
+    global avg
+    start = timer()
+    
+    old = start
+    popn = init(POPULATION_SIZE, PERMUTATION_LENGTH)       
+    i=0
+    globmin = popn[0]
+    while i<MAXITERATIONS and globmin.fitness>=118283:
+        i+=1
+        natselect(popn, TOURNAMENT_SIZE)
+        if i%1000==0:
+            globmin = getbest()
+            current = timer()
+            print '\n-----------------------------'
+            print 'elapsed time: ' + str(current-old) + '\niteration: ' + str(i) + '\nfitness: ' + str(globmin.fitness) + '\n'
+            print globmin. route
+            old = current
+    print '\nCOMPLETE!\niteration: ' + str(i)
+    print globmin. route
+    end = timer()
+    avg.append(end-start)
+    print '\ntotal time: ' + str(end-start)
+    del popn[:]
+    return (end-start, i)
+    
+
+def getaverage():
+    print 'average elapsed time: ' + str(sum(avg)/float(len(avg)))
+
+startit()
+# getaverage()
+
+#### selection.py
+from functions import fitness, individual, partmapcrossover, swapmutate, invmutate
+import random
+
+globmin = individual([], 10000000000)
+
+# selects best individual in a tournament
+# population is a list of individual objects
+# size is a int representing the size of the tournament
+# selects for either winners or losers
+def tournament(population, size, winners):
+    global globmin
+    s = []
+    # generates random members of the tournament
+    while len(s) < size:
+        s.append(random.randint(0, len(population)-1))
+    sublist = [population[i] for i in s]
+    best = sublist[0]
+    if winners:
+        for sub in sublist: 
+            if sub.fitness<best.fitness and random.random()<.9: best = sub
+        if best.fitness<=globmin.fitness: globmin = best
+    else:
+        for sub in sublist:
+            if sub.fitness>best.fitness and random.random()<.6: best = sub
+    return best
+
+def natselect(population, tournsize):
+    global globmin
+    win, loose = True, False
+    # gets two tournament winners
+    dad, mom = tournament(population, tournsize, win), tournament(population, tournsize, win)
+    # make sure we still have that best individual
+    if globmin not in population: mom = globmin
+    # creates children of the tournament winners
+    mom, dad = partmapcrossover(dad, mom), partmapcrossover(mom, dad)
+    # tournament to select losers
+    worstmom, worstdad = tournament(population, tournsize, loose), tournament(population, tournsize, loose)
+    mutater(mom)
+    mutater(dad)
+    # checks to make sure we are not trying to assign the same individual to 
+    # two different children
+    if worstdad != worstmom: 
+        population[population.index(worstdad)] =  dad
+        dad.fitness = fitness(dad)
+    population[population.index(worstmom)] =  mom
+    mom.fitness = fitness(mom)
+    #####
+    # if globmin not in population: son = globmin
+    # population[population.index(worstdad)] = son
+    # son.fitness = fitness(son)
+
+# mutates an individual
+def mutater(ind):
+    if random.random() < 1:
+        if random.random()<.9:
+            swapmutate(ind)
+        else: invmutate(ind)
+
+# gets the global best
+def getbest():
+    global globmin
+    return globmin
+    ### functions.py
+import random
+import math
+import inspect
+import sys
+
+CITIES = []
+POPULATION_SIZE, PERMUTATION_LENGTH = 0, 0
+fitnesscounter = 0
+
+class individual():
+    def __init__(self, inroute, fit):
+        self.route = inroute
+        self.fitness = fit
+
+# initializes things
+def init(popsize, permlength):
+    global POPULATION_SIZE, PERMUTATION_LENGTH
+    PERMUTATION_LENGTH, POPULATION_SIZE = permlength, popsize
+    initfitness()
+    return initpopn(popsize, permlength)
+
+# initializes fitness
+def initfitness():
+    global CITIES
+    with open("tsp.txt") as f:
+        # nested loop that also gets rid of the index in the file
+        # also i removed the words from the top of the file for simplicity
+        CITIES = [[int(x)  for x in line.split() if int(x)>130] for line in f]
+
+
+# initializes population
+def initpopn(popsize, permlength):
+    population = set() 
+    while len(population) < popsize:
+        rang = range(permlength)
+        random.shuffle(rang)
+        population.add(tuple(rang))
+    popn = [individual(list(pop), fitness(pop)) for pop in population]
+    return popn
+
+# measure of an individual's desirability
+def fitness(ind):
+    # allows fitness to take an object or a permutation
+    if isinstance(ind, individual): 
+        ind = ind.route
+    global fitnesscounter
+    fitnesscounter+=1
+    fitness = 0.0
+    for cit in range(PERMUTATION_LENGTH):
+        if cit==126: fitness += math.sqrt(pow(CITIES[ind[cit]][0] - CITIES[ind[0]][0],2) + pow(CITIES[ind[cit]][1] - CITIES[ind[0]][1],2))
+        else: fitness += math.sqrt(pow(CITIES[ind[cit]][0] - CITIES[ind[cit+1]][0],2) + pow(CITIES[ind[cit]][1] - CITIES[ind[cit+1]][1],2))
+    return fitness
+
+# combines two parents to make a child
+# partially mapped crossover 
+def partmapcrossover(fatherobj, motherobj):
+    father, mother = fatherobj.route, motherobj.route
+    i, j = randindex()
+    child = []
+    middledad = set()
+    for k in range(PERMUTATION_LENGTH):
+        if i <= k <= j: 
+            child.insert(k, father[k])
+            middledad.add(father[k])
+        else: 
+            child.insert(k, -1)
+    for k in range(i, j+1):
+        if mother[k] not in middledad:
+            tempindex = mother.index(father[k])
+            while i <= tempindex <= j:
+                tempindex = mother.index(father[tempindex]) # findns an index outised range i,j
+            child[tempindex] = mother[k]
+    for k in range(PERMUTATION_LENGTH):
+        if child[k] == -1: child[k] = mother[k]
+    return individual(child, 0)
+
+# mutates an individual by swapping two of its members randomly
+def swapmutate(individualobj):
+    individual = individualobj.route
+    i, j = randindex()
+    individual[i], individual[j] = individual[j], individual[i]
+
+# mutates and individual by inverting the substring between two operators
+def invmutate(individualobj):
+    individual = individualobj.route
+    i, j = randindex()
+    while i<j:
+        individual[i], individual[j] = individual[j], individual[i]  
+        j-=1
+        i+=1
+
+# gets two distinct random indeces such that i<j 
+def randindex():
+    i, j = 0, 0
+    while i==j: i, j = random.randint(0, PERMUTATION_LENGTH-1), random.randint(0, PERMUTATION_LENGTH-1)
+    i, j = min(i,j), max(i,j)
+    return (i,j)
+
